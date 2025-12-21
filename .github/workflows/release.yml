@@ -1,6 +1,7 @@
 name: Release
 
 on:
+  # ✅ 仅允许手动触发，且必须输入 Tag
   workflow_dispatch:
     inputs:
       tag:
@@ -8,26 +9,20 @@ on:
         required: true
         default: ''
 
-# 修正点 1：添加 workflows: write 权限以解决报错
+# 权限配置：允许创建 Release 和 Tag
 permissions:
   contents: write
-  workflows: write
 
 jobs:
   build-and-release-windows:
+    name: Build & Release Windows
     runs-on: windows-latest
-    name: Build Windows (x64) and Create Release
-
-    env:
-      CARGO_HOME: ${{ github.workspace }}\.cargo
-      RUSTUP_HOME: ${{ github.workspace }}\.rustup
 
     steps:
-      - name: Checkout repository (full history & tags)
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0 # 获取完整历史以进行 Tag 操作
 
       - name: Setup Node.js (LTS)
         uses: actions/setup-node@v4
@@ -35,102 +30,68 @@ jobs:
           node-version: '18'
           cache: 'npm'
 
-      - name: Cache Cargo registry
-        uses: actions/cache@v4
+      # ✅ 优化 1: 使用官方推荐的 Rust 工具链
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
         with:
-          path: |
-            ${{ env.CARGO_HOME }}/registry
-            ${{ env.CARGO_HOME }}/git
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
+          targets: x86_64-pc-windows-msvc
+
+      # ✅ 优化 2: 使用智能缓存（替代手动 cache 步骤）
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
 
       - name: Install npm dependencies
         run: npm ci
 
-      - name: Build frontend (vite)
+      - name: Build frontend
         run: npm run build
 
-      - name: Setup Rust toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          profile: minimal
-          override: true
+      # ✅ 优化 3: 移除了 WiX 安装步骤（windows-latest 镜像已内置，节省时间）
 
-      - name: Install WiX Toolset (needed for MSI bundling)
-        run: |
-          choco install wixtoolset --yes
-          refreshenv || true
-
-      - name: Build Tauri (bundle for Windows x64)
-        run: |
-          echo "Running tauri build..."
-          npm run tauri build
+      - name: Build Tauri
+        run: npm run tauri build
         env:
           CI: true
 
-      # 修正点 2：在构建后再处理 Tag，确保构建成功才打 Tag
-      - name: Ensure tag exists (create & push if missing)
-        id: ensure_tag
+      # ✅ 优化 4: 简化 Tag 处理逻辑
+      - name: Handle Tag (Create & Push if missing)
         shell: pwsh
         run: |
           $tag = "${{ github.event.inputs.tag }}"
-          if (-not $tag) {
-            Write-Error "Tag input is required"
-            exit 1
-          }
+          if (-not $tag) { Write-Error "Tag input is required"; exit 1 }
 
+          # 配置 Git 机器人身份
           git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git fetch --tags origin
-          # 使用更稳健的方式检查本地或远程是否存在 tag
-          $tagExists = git tag -l $tag
-          if (-not $tagExists) {
-             $remoteTag = git ls-remote --tags origin refs/tags/$tag
-             if ($remoteTag) { $tagExists = $true }
-          }
-
-          if (-not $tagExists) {
-            Write-Host "Tag $tag not found. Creating and pushing..."
+          # 检查 Tag 是否存在
+          git fetch --tags
+          if (git tag -l $tag) {
+            Write-Host "Tag $tag already exists."
+          } else {
+            Write-Host "Creating tag $tag ..."
             git tag -a $tag -m "Release $tag"
             git push origin $tag
-            Write-Host "Created and pushed tag $tag"
-          } else {
-            Write-Host "Tag $tag already exists."
           }
 
-      - name: Read release message
-        id: read_release_message
-        shell: pwsh
-        run: |
-          if (Test-Path ".github/release-message.md") {
-            $body = Get-Content -Raw .github/release-message.md
-          } else {
-            $body = "Release ${{ github.event.inputs.tag }}"
-          }
-          # 处理多行文本输出到 GITHUB_OUTPUT 的正确格式
-          $delimiter = "EOF-$(Get-Random)"
-          "body<<$delimiter" >> $env:GITHUB_OUTPUT
-          $body >> $env:GITHUB_OUTPUT
-          "$delimiter" >> $env:GITHUB_OUTPUT
-
-      # 修正点 3：使用 softprops/action-gh-release 替代旧的 create-release 和手动上传脚本
-      # 它会自动处理创建 Release 并在其中上传匹配到的文件
+      # ✅ 优化 5: 使用 softprops/action-gh-release 发布
       - name: Create Release and Upload Assets
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ github.event.inputs.tag }}
           name: ${{ github.event.inputs.tag }}
-          body: ${{ steps.read_release_message.outputs.body }}
+          generate_release_notes: true # 自动根据提交记录生成说明，替代手动读取文件
           draft: false
           prerelease: false
-          # 支持通配符，无需编写 PowerShell 循环上传
+          fail_on_unmatched_files: false # 避免找不到文件时报错
           files: |
             src-tauri/target/release/bundle/msi/*.msi
             src-tauri/target/release/bundle/nsis/*.exe
             src-tauri/target/release/*.exe
-            dist/*.zip
+            # 注意：dist/*.zip 只有在你手动压缩了 dist 文件夹后才会有，
+            # 默认 tauri build 不会生成 zip，如果不需要可以删除下面这行
+            # dist/*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
