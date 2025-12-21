@@ -31,9 +31,9 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "licenseFile": "LICENSE.txt", 
     "windows": {
       "nsis": {
-        "license": "LICENSE.txt" 
       }
     }
   }
