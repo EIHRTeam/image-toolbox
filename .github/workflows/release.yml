@@ -45,6 +45,9 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
+      - name: Check Tauri CLI version
+        run: npx tauri --version
+
       - name: Build frontend
         run: npm run build
 
