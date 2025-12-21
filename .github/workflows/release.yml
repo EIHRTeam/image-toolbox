@@ -50,6 +50,18 @@ jobs:
 
       # ✅ 优化 3: 移除了 WiX 安装步骤（windows-latest 镜像已内置，节省时间）
 
+      - name: Decode and install certificate
+        shell: pwsh
+        run: |
+          $pfx_cert_byte = [System.Convert]::FromBase64String("${{ secrets.WINDOWS_SIGNING_CERT }}")
+          $pfx_path = Join-Path $env:RUNNER_TEMP "cert.pfx"
+          [System.IO.File]::WriteAllBytes("$pfx_path", $pfx_cert_byte)
+          echo "TAURI_SIGNING_PRIVATE_KEY=$pfx_path" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD=${{ secrets.WINDOWS_SIGNING_CERT_PASSWORD }}" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        env:
+          # 仅在提供了 secrets 的情况下才运行此步骤
+          CI: ${{ secrets.WINDOWS_SIGNING_CERT != '' && secrets.WINDOWS_SIGNING_CERT_PASSWORD != '' }}
+
       - name: Build Tauri
         run: npm run tauri build
         env:
@@ -89,6 +101,7 @@ jobs:
           files: |
             LICENSE
             src-tauri/target/release/bundle/msi/*.msi
+            src-tauri/target/release/bundle/msix/*.msix
             src-tauri/target/release/bundle/nsis/*.exe
             src-tauri/target/release/*.exe
             # 注意：dist/*.zip 只有在你手动压缩了 dist 文件夹后才会有，
