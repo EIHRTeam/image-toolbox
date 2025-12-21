@@ -96,7 +96,3 @@ npm run tauri build
   }
 }
 ```
-
-## 📄 License
-
-MIT
