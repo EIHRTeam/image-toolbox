@@ -3,7 +3,6 @@ import { ref } from 'vue';
 import { Image, Settings as SettingsIcon, Layers, Box } from 'lucide-vue-next';
 import ImageCompressor from './components/ImageCompressor.vue';
 import Settings from './components/Settings.vue';
-import logoUrl from './assets/logo.png'; // Make sure to put the file here!
 
 const activeTab = ref('compressor');
 
