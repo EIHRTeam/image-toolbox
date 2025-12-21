@@ -1,6 +1,5 @@
 name: Release
 
-# 仅手动触发，且必须填写 tag
 on:
   workflow_dispatch:
     inputs:
@@ -10,15 +9,18 @@ on:
         default: ''
 
 permissions:
-  contents: write   # 需要写权限以便创建 tag & release & push
+  contents: write
 
 jobs:
   build-and-release-windows:
     runs-on: windows-latest
     name: Build Windows (x64) and Create Release
+
+    # 修正点：不要使用 runner.temp（解析时不可用）
+    # 改为基于 github.workspace，这两个路径在工作流解析时是可用的
     env:
-      CARGO_HOME: ${{ runner.temp }}\.cargo
-      RUSTUP_HOME: ${{ runner.temp }}\.rustup
+      CARGO_HOME: ${{ github.workspace }}\.cargo
+      RUSTUP_HOME: ${{ github.workspace }}\.rustup
 
     steps:
       - name: Checkout repository (full history & tags)
@@ -62,7 +64,6 @@ jobs:
           refreshenv || true
 
       - name: Build Tauri (bundle for Windows x64)
-        # tauri build on Windows will produce installer(s) (MSI/NSIS) and also portable exe/zip in bundle folder.
         run: |
           echo "Running tauri build..."
           npm run tauri build
@@ -75,8 +76,6 @@ jobs:
           Write-Host "Looking for bundles in src-tauri/target/release/bundle and other common locations..."
           if (Test-Path "src-tauri/target/release/bundle") {
             Get-ChildItem -Path src-tauri/target/release/bundle -Recurse -File | Select-Object FullName,Length
-          } else {
-            Write-Host "No bundle directory found at src-tauri/target/release/bundle"
           }
           Get-ChildItem -Path src-tauri/target/release -Filter *.exe -File -ErrorAction SilentlyContinue | Select-Object FullName,Length
 
@@ -94,16 +93,16 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           git fetch --tags origin
-          $exists = git tag --list $tag
+          $exists = git ls-remote --tags origin | Select-String -Pattern ("refs/tags/" + [regex]::Escape($tag))
           if (-not $exists) {
-            Write-Host "Tag $tag not found locally/remote. Creating annotated tag and pushing..."
+            Write-Host "Tag $tag not found on remote. Creating annotated tag and pushing..."
             git tag -a $tag -m "Release $tag"
             git push origin "refs/tags/$tag"
             Write-Host "Created and pushed tag $tag"
-            echo "::set-output name=created::true"
+            echo "created=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           } else {
             Write-Host "Tag $tag already exists."
-            echo "::set-output name=created::false"
+            echo "created=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           }
 
       - name: Read release message from .github/release-message.md
@@ -112,11 +111,10 @@ jobs:
         run: |
           if (-not (Test-Path ".github/release-message.md")) {
             Write-Host ".github/release-message.md not found; using default message."
-            $body = "Release $env:TAG"
+            $body = "Release $($env:GITHUB_REF_NAME)"
           } else {
             $body = Get-Content -Raw .github/release-message.md
           }
-          # export via GITHUB_OUTPUT
           Add-Content -Path $env:GITHUB_OUTPUT -Value "body<<EOF"
           Add-Content -Path $env:GITHUB_OUTPUT -Value $body
           Add-Content -Path $env:GITHUB_OUTPUT -Value "EOF"
@@ -143,7 +141,6 @@ jobs:
             Write-Error "No upload_url from create-release step."
             exit 1
           }
-          # remove template suffix "{?name,label}" if present
           $upload_url = $upload_url_template -replace '\{\?name,label\}$',''
 
           $candidates = @()
