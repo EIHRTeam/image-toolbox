@@ -329,6 +329,7 @@ checkFFmpeg();
                      <div>
                          <h1 class="text-xl font-bold text-white">Image Toolbox</h1>
                          <p class="text-sm text-zinc-400 mt-1">Version {{ appVersion }}</p>
+                         <p class="text-[10px] text-zinc-500 mt-2">Licensed under the GNU General Public License v3.0 license</p>
                      </div>
                      
                      <div class="flex gap-4 text-xs text-zinc-500 font-mono">
