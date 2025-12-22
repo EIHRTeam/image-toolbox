@@ -55,6 +55,17 @@ jobs:
       - name: Package MSIX
         shell: pwsh
         run: |
+          # 0. Find MakeAppx.exe
+          $kitsRoot = "C:\Program Files (x86)\Windows Kits\10\bin"
+          $sdkVersion = Get-ChildItem -Path $kitsRoot | Where-Object { $_.Name -match "^10\." } | Sort-Object Name -Descending | Select-Object -First 1 -ExpandProperty Name
+          $makeAppx = "$kitsRoot\$sdkVersion\x64\MakeAppx.exe"
+          Write-Host "Using MakeAppx from: $makeAppx"
+
+          if (-not (Test-Path $makeAppx)) {
+            Write-Error "MakeAppx.exe not found at $makeAppx"
+            exit 1
+          }
+
           # 1. Prepare Directory Structure
           $distDir = "msix-dist"
           $iconDir = "$distDir\icons"
@@ -75,7 +86,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path "src-tauri/target/release/bundle/msix"
           
           # Use MakeAppx from Windows SDK (available in path on windows-latest)
-          MakeAppx pack /d "$distDir" /p "$msixPath" /o
+          & $makeAppx pack /d "$distDir" /p "$msixPath" /o
 
       - name: Sign MSIX
         shell: pwsh
