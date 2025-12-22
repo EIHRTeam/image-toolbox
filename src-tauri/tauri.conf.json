@@ -34,9 +34,6 @@
     "licenseFile": "LICENSE.txt", 
     "windows": {
       "nsis": {
-      },
-      "msix": {
-        "publisher": "CN=u202f, O=u202f, C=CN"
       }
     }
   }
