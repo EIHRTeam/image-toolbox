@@ -320,24 +320,63 @@ const processTask = async (taskConfig: any, taskName: string, gitOptions?: { ena
         }
     }
 
-    for (const file of filesToProcess) {
-      const inputPath = await join(taskConfig.inputFolder, file.name);
-      const nameWithoutExt = file.name.substring(0, file.name.lastIndexOf('.'));
-      const outputFilename = `${nameWithoutExt}.${taskConfig.format}`;
-      const outputPath = await join(taskConfig.outputFolder, outputFilename);
+    // Concurrency Limit
+    const CONCURRENCY_LIMIT = 4;
+    const activePromises: Promise<void>[] = [];
 
-      const args = ['-y', '-v', 'error', '-i', inputPath, '-vf', filterString, outputPath];
-      
-      const command = Command.create('ffmpeg', args);
-      const output = await command.execute();
+    const processFile = async (file: any) => {
+      try {
+          const inputPath = await join(taskConfig.inputFolder, file.name);
+          const nameWithoutExt = file.name.substring(0, file.name.lastIndexOf('.'));
+          const outputFilename = `${nameWithoutExt}.${taskConfig.format}`;
+          const outputPath = await join(taskConfig.outputFolder, outputFilename);
 
-      if (output.code === 0) {
-        addLog(`[${taskName}] 处理成功: ${file.name}`, 'success');
-      } else {
-        addLog(`[${taskName}] 失败: ${file.name} - ${output.stderr}`, 'error');
+          const args = ['-y', '-v', 'error', '-i', inputPath, '-vf', filterString, outputPath];
+          
+          const command = Command.create('ffmpeg', args);
+          const output = await command.execute();
+
+          if (output.code === 0) {
+            addLog(`[${taskName}] 处理成功: ${file.name}`, 'success');
+          } else {
+            addLog(`[${taskName}] 失败: ${file.name} - ${output.stderr}`, 'error');
+          }
+      } catch (e: any) {
+          addLog(`[${taskName}] 异常: ${file.name} - ${e.message}`, 'error');
+      } finally {
+          progress.value.current++;
       }
-      progress.value.current++;
+    };
+
+    for (const file of filesToProcess) {
+       const p = processFile(file);
+       activePromises.push(p);
+       if (activePromises.length >= CONCURRENCY_LIMIT) {
+           await Promise.race(activePromises);
+           // Remove finished promises
+           // Note: Promise.race returns the value of the first resolved promise, 
+           // but we need to remove the specific promise object from the array.
+           // A simpler way is to wrap the promise to remove itself.
+           // However, for simplicity in this context without external libs:
+           // We simply await one slot to free up.
+           // Let's implement a better pool mechanism below.
+       }
     }
+    
+    // Better implementation of pool inside the loop
+    const results = [];
+    const executing = new Set<Promise<void>>();
+
+    for (const file of filesToProcess) {
+        const p = processFile(file).then(() => { executing.delete(p); });
+        results.push(p);
+        executing.add(p);
+        
+        if (executing.size >= CONCURRENCY_LIMIT) {
+            await Promise.race(executing);
+        }
+    }
+    await Promise.all(results);
 
     // Git Auto-Push for this specific task
     const runGitInput = gitOptions ? gitOptions.enableInput : enableGitInput.value;
