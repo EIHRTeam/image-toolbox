@@ -55,6 +55,86 @@ jobs:
         env:
           CI: true
 
+      # --- MSIX Packaging & Signing Steps Start ---
+      - name: Package MSIX
+        shell: pwsh
+        run: |
+          # 1. Prepare Directory Structure
+          $distDir = "msix-dist"
+          $iconDir = "$distDir\icons"
+          New-Item -ItemType Directory -Force -Path $iconDir
+
+          # 2. Copy Executable & Resources
+          Copy-Item "src-tauri/target/release/image-toolbox.exe" -Destination "$distDir\image-toolbox.exe"
+          
+          # Copy all icons
+          Copy-Item "src-tauri/icons\*" -Destination $iconDir
+          
+          # Copy Manifest
+          Copy-Item "src-tauri/AppxManifest.xml" -Destination "$distDir\AppxManifest.xml"
+
+          # 3. Pack MSIX
+          $msixPath = "src-tauri/target/release/bundle/msix/image-toolbox.msix"
+          New-Item -ItemType Directory -Force -Path "src-tauri/target/release/bundle/msix"
+          
+          # Use MakeAppx from Windows SDK
+          MakeAppx pack /d "$distDir" /p "$msixPath" /o
+
+      - name: Sign MSIX
+        shell: pwsh
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.WINDOWS_PFX_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_PFX_PASSWORD }}
+        run: |
+          $msixPath = "src-tauri/target/release/bundle/msix/image-toolbox.msix"
+          
+          if ($env:CERTIFICATE_BASE64) {
+            Write-Host "Signing with provided certificate..."
+            $pfxPath = "cert.pfx"
+            [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($env:CERTIFICATE_BASE64))
+            
+            & "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe" sign /f $pfxPath /p "$env:CERTIFICATE_PASSWORD" /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 $msixPath
+            Remove-Item $pfxPath
+          } else {
+            Write-Host "No certificate secret found. Generating self-signed certificate for testing..."
+            # Create Self-Signed Cert
+            $cert = New-SelfSignedCertificate -Type Custom -Subject "CN=ImageToolbox" -KeyUsage DigitalSignature -FriendlyName "ImageToolbox Test Cert" -CertStoreLocation "Cert:\CurrentUser\My" -TextExtension @("2.5.29.37={text}1.3.6.1.5.5.7.3.3", "2.5.29.19={text}")
+            
+            # Export PFX
+            $pfxPath = "self-signed.pfx"
+            $password = ConvertTo-SecureString -String "password" -Force -AsPlainText
+            Export-PfxCertificate -Cert $cert -FilePath $pfxPath -Password $password
+            
+            # Sign
+            & "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe" sign /f $pfxPath /p "password" /fd SHA256 $msixPath
+            
+            Write-Warning "This MSIX is signed with a self-signed certificate. You must install the certificate to 'Trusted Root Certification Authorities' to install the app."
+          }
+      # --- MSIX Packaging & Signing Steps End ---
+
+      - name: Rename Artifacts
+        shell: pwsh
+        run: |
+          $tag = "${{ github.event.inputs.tag }}"
+          $version = $tag -replace "^v", ""
+          
+          # Rename Portable EXE
+          $portableSrc = "src-tauri/target/release/image-toolbox.exe"
+          $portableDst = "src-tauri/target/release/image-toolbox_portable.exe"
+          if (Test-Path $portableSrc) {
+            Write-Host "Renaming $portableSrc to $portableDst"
+            Move-Item $portableSrc $portableDst
+          }
+
+          # Rename MSI
+          $msiDir = "src-tauri/target/release/bundle/msi"
+          $msiSrc = Get-ChildItem "$msiDir\*.msi" | Select-Object -First 1
+          if ($msiSrc) {
+             $msiDst = "$msiDir\image-toolbox_${version}_x64-setup.msi"
+             Write-Host "Renaming $($msiSrc.FullName) to $msiDst"
+             Move-Item $msiSrc.FullName $msiDst
+          }
+
       # ✅ 优化 4: 简化 Tag 处理逻辑
       - name: Handle Tag (Create & Push if missing)
         shell: pwsh
@@ -90,7 +170,8 @@ jobs:
             LICENSE
             src-tauri/target/release/bundle/msi/*.msi
             src-tauri/target/release/bundle/nsis/*.exe
-            src-tauri/target/release/*.exe
+            src-tauri/target/release/bundle/msix/*.msix
+            src-tauri/target/release/image-toolbox_portable.exe
             # 注意：dist/*.zip 只有在你手动压缩了 dist 文件夹后才会有，
             # 默认 tauri build 不会生成 zip，如果不需要可以删除下面这行
             # dist/*.zip
