@@ -209,7 +209,7 @@ const startProcess = async () => {
       <div class="space-y-1">
         <h2 class="text-xl font-bold text-white tracking-tight">智能模版裁剪</h2>
         <p class="text-zinc-400 text-xs">基于 SIFT 特征匹配，自动定位并裁剪目标区域</p>
-        <p class="text-zinc-400 text-xs">该模块基于 EIHRTeam/tools/image-cropping-tool 修改</p>
+        <p class="text-zinc-400 text-xs">该模块基于 <a href="https://github.com/EIHRTeam/tools?tab=readme-ov-file#image-croppingl">EIHRTeam/tools/image-cropping-tool</a> 修改</p>
       </div>
       
       <div v-if="isProcessing" class="flex items-center gap-2 bg-zinc-900/50 px-3 py-1.5 rounded-lg border border-white/5 backdrop-blur">
