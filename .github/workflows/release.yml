@@ -10,7 +10,7 @@ on:
 
 permissions:
   contents: write
-  # workflows: write  <-- 已删除此行
+  actions: write
 
 jobs:
   build-and-release-windows:
