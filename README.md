@@ -1,6 +1,6 @@
 # Image Toolbox (图片工具箱)
 [![Release](https://github.com/EIHRTeam/image-toolbox/actions/workflows/release.yml/badge.svg)](https://github.com/EIHRTeam/image-toolbox/actions/workflows/release.yml)
-[![Build](https://github.com/EIHRTeam/image-toolbox/actions/workflows/build.yml/badge.svg)](https://github.com/EIHRTeam/image-toolbox/actions/workflows/build.yml)
+[![Build](https://github.com/EIHRTeam/image-toolbox/actions/workflows/build.yml/badge.svg)](https://github.com/EIHRTeam/image-toolbox/actions/workflows/build.yml)<br>
 ![Version](https://img.shields.io/badge/version-0.3-blue) ![Tauri](https://img.shields.io/badge/Tauri-v2-orange) ![Vue](https://img.shields.io/badge/Vue-3-green)
 
 基于 **Tauri v2** 与 **Vue 3** 开发的桌面端图片批处理软件。
